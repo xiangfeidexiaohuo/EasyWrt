@@ -1,6 +1,6 @@
 ## EasyWrt
 
-* #### 带 quickstart 和 iStore应用商店 的OpenWrt
+#### 带iStore应用商店的OpenWrt
 
 ```
 固件管理ip：192.168.2.1  
@@ -8,3 +8,7 @@
 密码：为空
 ```
 
+
+<h4 align="left">访客数 :eyes:</h4>
+
+<p align="left"><img src="https://profile-counter.glitch.me/xiangfeidexiaohuo/count.svg" alt="xiangfeidexiaohuo :: Visitor's Count" /></p>
