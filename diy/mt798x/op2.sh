@@ -45,7 +45,7 @@ sed -i "s/hostname='.*'/hostname='EasyWrt'/g" package/base-files/files/bin/confi
 ##加入作者信息
 sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='EasyWrt-$(date +%Y%m%d)'/g"  package/base-files/files/etc/openwrt_release
 sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=' By YaoDao'/g" package/base-files/files/etc/openwrt_release
-cp -af feeds/xiangfeidexiaohuo/patch/mt79/banner  package/base-files/files/etc/
+cp -af feeds/xiangfeidexiaohuo/patch/easy/banner  package/base-files/files/etc/
 
 sed -i "2iuci set istore.istore.channel='easy_daodao'" package/emortal/default-settings/files/99-default-settings
 sed -i "3iuci commit istore" package/emortal/default-settings/files/99-default-settings
