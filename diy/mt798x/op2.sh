@@ -43,7 +43,7 @@ sed -i "s/hostname='.*'/hostname='EasyWrt'/g" package/base-files/files/bin/confi
 
 ##加入作者信息
 sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='EasyWrt-$(date +%Y%m%d)'/g"  package/base-files/files/etc/openwrt_release
-sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=' By YaoDao'/g" package/base-files/files/etc/openwrt_release
+sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=' By DaoDao'/g" package/base-files/files/etc/openwrt_release
 cp -af feeds/extraipk/patch/diy/banner-easy  package/base-files/files/etc/banner
 
 sed -i "2iuci set istore.istore.channel='easy_daodao'" package/emortal/default-settings/files/99-default-settings
