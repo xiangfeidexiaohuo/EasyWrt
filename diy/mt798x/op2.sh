@@ -57,6 +57,10 @@ sed -i "s/MT7986_AX6000_5G/EasyWrt-5G/g" package/mtk/drivers/wifi-profile/files/
 sed -i "s/MT7981_AX3000_2.4G/EasyWrt-2.4G/g" package/mtk/drivers/wifi-profile/files/mt7981/mt7981.dbdc.b0.dat
 sed -i "s/MT7981_AX3000_5G/EasyWrt-5G/g" package/mtk/drivers/wifi-profile/files/mt7981/mt7981.dbdc.b1.dat
 
+##New WiFi
+sed -i "s/ImmortalWrt-2.4G/EasyWrt-2.4G/g" package/mtk/applications/mtwifi-cfg/files/mtwifi.sh
+sed -i "s/ImmortalWrt-5G/EasyWrt-5G/g" package/mtk/applications/mtwifi-cfg/files/mtwifi.sh
+
 
 ##FQ全部调到VPN菜单
 sed -i 's/services/vpn/g' package/feeds/luci/luci-app-ssr-plus/luasrc/controller/*.lua
