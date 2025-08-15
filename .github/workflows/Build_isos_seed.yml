@@ -101,7 +101,7 @@ jobs:
           mkdir -p artifacts/${{ matrix.model }}
           
           rom=openwrt-${{ matrix.model }}/bin/targets/mediatek/filogic/${{ matrix.output_pattern }}
-          cp -a $rom artifacts/${{ matrix.model }}/istoreos-24.10.2-$(date '+%Y%m%d%H')-seed-${{ matrix.lower_model }}-squashfs-sysupgrade.bin
+          cp -a $rom artifacts/${{ matrix.model }}/istoreos-24.10.3-$(date '+%Y%m%d%H')-seed-${{ matrix.lower_model }}-squashfs-sysupgrade.bin
 
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@main
