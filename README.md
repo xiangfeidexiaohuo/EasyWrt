@@ -24,6 +24,7 @@
 | 端口 | `lan2 lan3 lan4 wan` 全部桥进 `br-lan`（插哪个口都能进后台） |
 | DHCP / IPv6 RA | **关闭**（`ignore 1` + `ra disabled` + `dhcpv6 disabled`） |
 | 2.4G / 5G | `ASUS` / `ASUS_5G`，`sae-mixed`，2.4G 信道 auto、5G 固定 149 |
+| WiFi 口令 | **`Dsa78963`**（定义在 `build.yml` 的 `env.WIFI_PASS`；表单填写或仓库 Secret 可覆盖） |
 | 802.11k / r | 均开启（`ieee80211k=1` / `ieee80211r=1`，FT-SAE 实测可用） |
 | 802.11v | **默认关闭**（`steeringthresold` 不写），需要时手动开，验证方法见下 |
 | WAN MAC | 由固件从 Bdata 分区 `ethaddr_wan` 读取，**每台机器各不相同** |
