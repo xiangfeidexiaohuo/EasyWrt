@@ -71,9 +71,29 @@ AX3000T 的 SSID 直接来自 `diy/files/ax3000t/etc/config/wireless`，不走 `
 **建议改用仓库 Secret**：Settings → Secrets and variables → Actions → New repository secret，
 名字 `WIFI_PASS`。不设置则使用公开的默认口令，等于固件出厂口令人人皆知。
 
+## 改配置：不用改文件
+
+按改动频率分三档，别再为了改个 SSID 去改文件、提交、等两小时：
+
+| 想改什么 | 怎么做 | 要重新编译吗 |
+|---|---|---|
+| SSID / 口令 / 管理地址 | Actions → **build** → Run workflow，表单里填 `ssid_2g`、`ssid_5g`、`wifi_pass`、`lan_ip` | 要，但**不用改文件、不用提交** |
+| 已经刷好的机器上的任何设置 | SSH 上去 `uci set …; uci commit …; wifi reload` | 不要，立刻生效 |
+| 结构性改动（端口归属、加密方式、11v 默认值、加设备） | 改 `diy/files/…` 或 `diy/mt798x/*.sh` 并提交 | 要 |
+
+表单四项都可以留空，留空即取默认值：`ASUS` / `ASUS_5G` / 仓库 Secret（再没有就 `Dsa78963`）/ `192.168.6.2`。
+
+实现方式：`diy/files/<device>/` 里放的是 `@SSID_2G@`、`@WIFI_KEY@`、`@LAN_IP@` 这类占位符，
+构建时由 `diy/mt798x/render.py` 做**纯字面替换**——不走 sed，所以口令里带 `& | \ /` 也不会被吃掉；
+替换前校验长度（SSID 1~32、口令 8~63）与字符（禁止单引号和换行），替换后断言没有残留占位符，
+任何一步不对就让构建红掉。
+
+⚠️ `wifi_pass` 填在表单里会出现在 Actions 运行的输入记录中（公开仓库可见）。想保密就配仓库
+Secret，表单留空即可。
+
 ## 构建
 
-Actions → **build** → Run workflow，设备可选 `all` / `ax3000t` / `ax6000`。
+Actions → **build** → Run workflow，设备可选 `ax3000t`（默认）/ `all` / `ax6000`。
 也可以用 `repository_dispatch` 触发全部设备。
 
 每次构建产出三个文件：
@@ -95,11 +115,12 @@ Release 名称格式：`EasyWrt-<设备>-<日期>-<源码短 SHA>`，每个固�
   build.yml              # 唯一构建入口，matrix 展开设备
   cleanup.yml            # 清理历史运行记录（7 天 / 保留 3 次）
 configs/ARM/mt798x/      # 各机型的 seed 配置（完整 .config）
-diy/files/<device>/      # 直接进 rootfs 的设备配置（etc/config/*、etc/uci-defaults/*）
+diy/files/<device>/      # 直接进 rootfs 的设备配置（含 @占位符@，构建时渲染）
 diy/mt798x/
   feed.sh                # 额外 feed 挂载点（当前为空）
   lib.sh                 # 公共函数：改 IP / SSID / WiFi 口令，均带断言
-  ax3000t.sh             # AX3000T 定制：LAN 192.168.6.2 + 兜底无线口令
+  render.py              # 把 @SSID_2G@ 等占位符换成本次构建参数（纯字面替换）
+  ax3000t.sh             # AX3000T 定制：兜底 IP 与无线口令
   ax6000.sh              # AX6000 定制：SSID 改为 ASUS / ASUS_5G
 diy/aliupload.py         # 未接线，预留给网盘上传
 ```

@@ -60,7 +60,7 @@ uci -q delete network.wan6
 # 这里再写一次，避免那一步被上游改动影响时整机失联。
 uci -q set network.lan.device="$br_dev"
 uci -q set network.lan.proto='static'
-uci -q set network.lan.ipaddr='192.168.6.2'
+uci -q set network.lan.ipaddr='@LAN_IP@'
 uci -q set network.lan.netmask='255.255.255.0'
 
 uci -q commit network

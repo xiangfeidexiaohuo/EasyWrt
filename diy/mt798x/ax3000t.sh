@@ -17,7 +17,8 @@ set -euo pipefail
 SRC="${1:?用法: ax3000t.sh <openwrt 源码目录>}"
 . "$(dirname "$0")/lib.sh"
 
-apply_lan_ip "$SRC" "192.168.6.2"
+# 兜底：万一 files/ 没被带上，默认配置也落在同一个管理地址
+apply_lan_ip "$SRC" "${LAN_IP:-192.168.6.2}"
 apply_wifi_key "$SRC"
 
 info "ax3000t 定制完成"

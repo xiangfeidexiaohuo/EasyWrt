@@ -17,6 +17,28 @@ on:
           - ax3000t
           - all
           - ax6000
+
+      # 下面四项留空即用默认值；填了就不必改仓库文件
+      ssid_2g:
+        description: 2.4G SSID（留空 = ASUS）
+        type: string
+        required: false
+        default: ''
+      ssid_5g:
+        description: 5G SSID（留空 = ASUS_5G）
+        type: string
+        required: false
+        default: ''
+      wifi_pass:
+        description: WiFi 口令（留空 = 仓库 Secret，再没有就用内置默认）
+        type: string
+        required: false
+        default: ''
+      lan_ip:
+        description: 管理地址（留空 = 192.168.6.2）
+        type: string
+        required: false
+        default: ''
   repository_dispatch:
 
 permissions:
@@ -30,7 +52,11 @@ concurrency:
 env:
   REPO_URL: https://github.com/iscelor/immortalwrt-mt798x-6.6
   REPO_BRANCH: fix/80211v
-  WIFI_PASS: ${{ secrets.WIFI_PASS || 'Dsa78963' }}
+  # 优先级：触发时填的 > 仓库 Secret > 内置默认
+  WIFI_PASS: ${{ github.event.inputs.wifi_pass || secrets.WIFI_PASS || 'Dsa78963' }}
+  SSID_2G: ${{ github.event.inputs.ssid_2g || 'ASUS' }}
+  SSID_5G: ${{ github.event.inputs.ssid_5g || 'ASUS_5G' }}
+  LAN_IP: ${{ github.event.inputs.lan_ip || '192.168.6.2' }}
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 2G
   TZ: Asia/Shanghai
@@ -139,11 +165,16 @@ jobs:
           # 晚于包安装，所以 /etc/config/* 以这里为准
           mkdir -p openwrt/files
           cp -a "$src/." openwrt/files/
+          # 把 @SSID_2G@ 之类的占位符换成本次构建的参数（纯字面替换，无 sed 转义问题）
+          python3 diy/mt798x/render.py openwrt/files
           echo "--- 写入 openwrt/files ---"
           find openwrt/files -type f -printf '%P\n' | sort
           if [ -f "openwrt/files/etc/config/wireless" ]; then
             grep -q "encryption 'sae-mixed'" openwrt/files/etc/config/wireless \
               || { echo "::error::内置 wireless 不是 sae-mixed，拒绝继续"; exit 1; }
+            echo "--- 生效的 SSID / 地址 ---"
+            grep -E "option ssid |option ipaddr" openwrt/files/etc/config/wireless \
+              openwrt/files/etc/uci-defaults/99-ax3000t-ap-mode || true
           fi
 
       - name: 缓存下载的源码包

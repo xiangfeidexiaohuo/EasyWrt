@@ -7,5 +7,5 @@ config turboacc 'config'
 	option fastpath_mh_eth_hnat_ppenum '2'
 	option fullcone '2'
 	# AP 模式标记：填本机管理地址，turboacc 据此不当网关用
-	option fastpath_mh_eth_hnat_ap '192.168.6.2'
+	option fastpath_mh_eth_hnat_ap '@LAN_IP@'
 	option tcpcca 'cubic'
