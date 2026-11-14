@@ -163,51 +163,43 @@ diy/aliupload.py         # 未接线，预留给网盘上传
 3. 在 `build.yml` 的 `setup` 步骤里给 `all` JSON 加一条
    （`device` / `label` / `config` / `rom` 四个字段，`device` 必须与脚本同名）
 
-## 救砖：先分清楚是哪套 bootloader
+## 救砖：两台都是不死 U-Boot（已实测确认）
 
-两台机器的救砖方式**完全不同**，动手前先确认清楚。
+两台机器的 FIP 分区与官方 `*-fip-multi.bin` **逐字节一致**，确认跑的是 bl-mt798x 系的
+不死 U-Boot（multi 变体），不是原厂 bootloader：
 
-### 怎么判别（10 秒）
+| 设备 | 文件 | 大小 | sha256（一致） |
+|---|---|---|---|
+| AX3000T | `mt7981-xiaomi_mi-router-ax3000t-fip-multi.bin` | 714025 | `e0a6e3bc6975…` |
+| AX6000 | `mt7986-xiaomi_redmi-router-ax6000-fip-multi.bin` | 808457 | `0796db443004…` |
 
-断电，按住 reset 键上电、保持 5 秒：
-
-| 现象 | 结论 | 恢复方式 |
-|---|---|---|
-| 出现网页（DHCP 自动下发地址） | **不死 U-Boot**（bl-mt798x 系） | web failsafe 上传固件 |
-| 毫无反应、直接进系统 | 原厂 U-Boot | `mtkupgrade fw` + TFTP |
-
-⚠️ **不要用 `fw_printenv` 判断**。它读的是 `Nvram` 分区（`/etc/fw_env.config` 指向 mtd1），
-如果换过 U-Boot 而它不用这个分区存环境变量，读到的是**原厂残留数据**，会得出错误结论。
-
-### 用分区表判断「固件该用哪种」
+以后换机器想确认，照这个比对：
 
 ```sh
-cat /proc/mtd
+dd if=/dev/mtd4 of=/tmp/fip.bin bs=4096 count=200
+head -c <固件文件字节数> /tmp/fip.bin | sha256sum
 ```
 
-| 设备 | stock layout（本文档的固件适用） | expand 布局（不适用） |
-|---|---|---|
-| AX3000T | `ubi_kernel 0x2200000` + `ubi 0x4e00000` | `ubi` 明显更大 |
-| AX6000 | `ubi_kernel 0x1e00000` + `ubi 0x5000000` | `ubi` 明显更大 |
+### 恢复方式：reset 进 web failsafe
 
-刷了 expand 版 U-Boot 就必须用 ubootmod 变体的固件，**不能刷本文档的 stock 镜像**。
+断电，按住 reset 上电保持 5 秒，浏览器打开页面直接上传固件。地址通常由 DHCP 下发；
+**AX3000T 拿不到地址是这套 U-Boot 的已知问题**（帖子里提到与 Nvram 有关），
+手动给电脑设静态 IP 即可，不影响使用。
 
-### 路径 A：不死 U-Boot（web failsafe）
+### 不要用 fw_printenv 判断或修改 bootloader
 
-上电时按住 reset 5 秒，浏览器打开页面直接上传固件。页面地址通常由 DHCP 下发；拿不到地址
-（AX3000T 上这是已知问题，与 Nvram 有关）就手动给电脑设静态 IP（常见 `192.168.1.x`，以串口打印为准）。
+`/etc/fw_env.config` 指向 `Nvram` 分区，但那里是**原厂的残留环境变量**
+（`bootcmd=bootxq`、`bootmenu_N=mtkupgrade…`、`ipaddr=192.168.10.1`）。新的 U-Boot 不读它，所以：
 
-### 路径 B：原厂 U-Boot（TFTP）
+- 用 `fw_printenv` 判断 bootloader 类型会得出错误结论（这几行已经骗过我一次）
+- 用 `fw_setenv` 改参数对 bootloader 无效，只是写进一块没人看的空间
+- 网上基于这些变量的 TFTP 恢复地址（`192.168.10.1` 之类）对这两台**不适用**
 
-引导菜单里的 `Upgrade firmware = mtkupgrade fw` 用 TFTP 从电脑拉固件写 flash，不依赖路由器上的系统。
+### 分区布局
 
-| 设备 | 设备自身地址 | 电脑（TFTP 服务器）地址 |
-|---|---|---|
-| AX3000T | `192.168.10.1` | `192.168.10.100` |
-| AX6000 | `192.168.31.1` | `192.168.31.100` |
-
-更稳的备选：先用小米官方恢复方式刷回**原厂固件**再重装；`mtkload` 也可以用 TFTP 把
-`-initramfs-kernel.bin` 载入内存启动（不写 flash），进系统后 `sysupgrade`。
+`cat /proc/mtd` 实测两台都是 stock 尺寸：AX3000T `ubi_kernel 0x2200000` + `ubi 0x4e00000`，
+AX6000 `0x1e00000` + `0x5000000`。所以本文档的 stock 镜像适用；如果以后重刷成 expand 变体，
+必须换 ubootmod 固件。
 
 ## 注意
 
