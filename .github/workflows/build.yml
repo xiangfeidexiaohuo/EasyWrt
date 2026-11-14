@@ -63,7 +63,7 @@ env:
   SSID_5G: ${{ github.event.inputs.ssid_5g || 'ASUS_5G' }}
   LAN_IP: ${{ github.event.inputs.lan_ip || '192.168.6.2' }}
   CCACHE_DIR: ${{ github.workspace }}/.ccache
-  CCACHE_MAXSIZE: 2G
+  CCACHE_MAXSIZE: 3G
   TZ: Asia/Shanghai
 
 jobs:
@@ -116,7 +116,9 @@ jobs:
           sudo -E rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /etc/mysql /etc/php /usr/local/share/boost
           [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
           sudo -E apt-get update -y
-          sudo -E apt-get install -y ack antlr3 aria2 asciidoc autoconf automake autopoint \
+          # --no-install-recommends：只装显式依赖，省掉一堆文档/建议包，
+          # 这一步原来要 8 分钟，安装时间主要耗在这些可选包上
+          sudo -E apt-get install -y --no-install-recommends ack antlr3 aria2 asciidoc autoconf automake autopoint \
             binutils bison build-essential bzip2 ccache cpio curl device-tree-compiler fastjar flex \
             gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
             libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
@@ -190,16 +192,21 @@ jobs:
         with:
           path: openwrt/dl
           key: dl-${{ matrix.device }}-${{ hashFiles('configs/ARM/mt798x/*.config') }}
+          # 前缀只到 dl-，两台设备共用同一批源码包（下载内容与设备无关）
           restore-keys: |
-            dl-${{ matrix.device }}-
+            dl-
 
       - name: 缓存 ccache
         uses: actions/cache@v4
         with:
-          path: .ccache
-          key: ccache-${{ matrix.device }}-${{ hashFiles('configs/ARM/mt798x/*.config') }}
+          # 关键：key 必须每次唯一。actions/cache 命中后不会再保存，
+          # 用固定 key 的话缓存永远停在第一次构建的状态，新编出来的对象
+          # 一个都进不去，等于只有第一个小时的成果被复用。
+          # 唯一 key + 前缀恢复最近一次，才能越编越热。
+          key: ccache-${{ matrix.device }}-${{ github.run_id }}
           restore-keys: |
             ccache-${{ matrix.device }}-
+          path: .ccache
 
       - name: 应用配置
         env:
@@ -243,7 +250,14 @@ jobs:
 
       - name: 编译
         working-directory: ./openwrt
-        run: make -j"$(nproc)" V=s
+        run: |
+          set -euo pipefail
+          echo "--- 编译前 ccache ---"
+          ccache -s || true
+          # 4 vCPU 的 runner 上 -j5 比 -j4 更能填满流水线；内存 16G 足够
+          make -j"$(( $(nproc) + 1 ))" V=s
+          echo "--- 编译后 ccache ---"
+          ccache -s || true
 
       - name: 打包与校验
         id: pack
