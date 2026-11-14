@@ -67,6 +67,11 @@ env:
   CCACHE_MAXSIZE: 3G
   TZ: Asia/Shanghai
 
+# 容器 job 里 run 的默认 shell 是 sh(dash)，不认 set -o pipefail；统一用 bash
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # 把设备表集中在一处：加设备只改这里
   setup:
