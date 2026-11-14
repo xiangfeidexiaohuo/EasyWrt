@@ -1,6 +1,11 @@
 name: build
 
 # 一台设备一个 matrix 条目，避免为每台机器复制一份 workflow。
+#
+# runner 固定 ubuntu-24.04：GitHub 在 2026-10 把 ubuntu-latest 切到 26.04，
+# 而 Ubuntu 25.10 起 coreutils 默认换成 uutils（Rust 版），`install --version`
+# 不再输出 GNU，OpenWrt 24.10 的 prereq 会判定 "Please install GNU 'install'"
+# 并让 make defconfig 退出 2。24.04 上的 coreutils 是真 GNU，验证可用。
 # 触发方式：
 #   - 手动：Actions → build → Run workflow，可选只构建单台设备
 #   - API ：repository_dispatch
@@ -65,7 +70,7 @@ jobs:
   # 把设备表集中在一处：加设备只改这里
   setup:
     name: 解析设备列表
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       include: ${{ steps.gen.outputs.include }}
@@ -86,7 +91,7 @@ jobs:
   build:
     name: ${{ matrix.label }}
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 300
     strategy:
       fail-fast: false
@@ -206,6 +211,13 @@ jobs:
             openwrt/.config
           grep -q '^CONFIG_CCACHE=y$' openwrt/.config || echo 'CONFIG_CCACHE=y' >> openwrt/.config
           grep -q '^CONFIG_CCACHE_DIR=' openwrt/.config || echo "CONFIG_CCACHE_DIR=\"${CCACHE_DIR}\"" >> openwrt/.config
+          # OpenWrt 的 prereq 只认 GNU coreutils；uutils 版会让 make defconfig 直接退出 2，
+          # 报错还埋在 40 行 Checking 里。这里先自己判一次，给出能直接看懂的信息。
+          install --version | head -1
+          install --version | head -1 | grep -q 'GNU' || {
+            echo "::error::install 不是 GNU coreutils（运行器换成了 uutils），OpenWrt prereq 必失败；请把 runs-on 固定到 ubuntu-24.04"
+            exit 1
+          }
           cd openwrt
           make defconfig
           # 配置被上游改动吞掉时立刻失败，而不是编出一个残废固件
