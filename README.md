@@ -116,7 +116,9 @@ Release 名称格式：`EasyWrt-<设备>-<日期>-<源码短 SHA>`，每个固�
 ```
 .github/workflows/
   build.yml              # 唯一构建入口，matrix 展开设备
+  builder-image.yml      # 构建编译环境镜像并推到 ghcr
   cleanup.yml            # 清理历史运行记录（7 天 / 保留 3 次）
+docker/builder.Dockerfile  # 编译环境镜像（OpenWrt 依赖全部预装）
 configs/ARM/mt798x/      # 各机型的 seed 配置（完整 .config）
 diy/files/<device>/      # 直接进 rootfs 的设备配置（含 @占位符@，构建时渲染）
 diy/mt798x/
@@ -133,6 +135,16 @@ diy/aliupload.py         # 未接线，预留给网盘上传
 
 定制脚本的行为约定：**任何一处 sed 锚点没命中就直接让构建失败**，不允许静默产出一个
 "看起来正常、实际是开放热点"的固件。
+
+## 构建环境
+
+`build` job 跑在 `ghcr.io/<owner>/openwrt-builder:24.04` 容器里，OpenWrt 需要的 apt 依赖全部预装在里面，
+所以构建时不再执行 `apt-get install`（原来每次 8 分钟）也不需要清理 runner 的预装 SDK。
+
+- 改依赖：编辑 `docker/builder.Dockerfile`，push 后 `builder-image` 自动重建（约 2 分钟）
+- 定时：每月 1 日自动重建一次，顺带吃 Ubuntu 的安全更新
+- 手动：Actions → **builder-image** → Run workflow
+- 容器里 `run` 的默认 shell 是 `sh`，workflow 已经用 `defaults.run.shell: bash` 统一成 bash
 
 ## 换源码分支
 
