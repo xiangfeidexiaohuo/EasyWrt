@@ -12,7 +12,9 @@
 | 红米 AX6000（MT7986） | `configs/ARM/mt798x/mt7986_ax6000.config` | `immortalwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-stock-squashfs-sysupgrade.bin` | `192.168.6.1` |
 
 - 分区布局：**stock layout**
-- U-Boot 地址：AX3000T `192.168.1.1` / AX6000 `192.168.31.1`
+- U-Boot 恢复地址（`mtkupgrade fw`，TFTP）：AX3000T 设备 `192.168.10.1` / 电脑 `192.168.10.100`；
+  AX6000 设备 `192.168.31.1` / 电脑 `192.168.31.100`。这两组是从各自 U-Boot 环境
+  （`fw_printenv` 的 `ipaddr` / `serverip`）读出来的，不是 OpenWrt 的 LAN 地址——别混。
 - 登录：`root`，密码为空
 
 ## AX3000T 出厂状态（配置已烤进固件）
@@ -148,6 +150,27 @@ diy/aliupload.py         # 未接线，预留给网盘上传
    `apply_lan_ip` / `apply_ssid` / `apply_wifi_key`
 3. 在 `build.yml` 的 `setup` 步骤里给 `all` JSON 加一条
    （`device` / `label` / `config` / `rom` 四个字段，`device` 必须与脚本同名）
+
+## 救砖（TFTP）
+
+两台机器的 bootloader 都没动过（stock layout），引导菜单里有
+`Upgrade firmware = mtkupgrade fw`：它通过网络用 TFTP 从电脑拉固件直接写 flash，
+**不依赖路由器上的系统**，所以系统刷坏了也还能用。
+
+| 设备 | 设备自身地址 | 电脑（TFTP 服务器）地址 |
+|---|---|---|
+| AX3000T | `192.168.10.1` | `192.168.10.100` |
+| AX6000 | `192.168.31.1` | `192.168.31.100` |
+
+流程：电脑设成上表右侧的固定 IP、起一个 TFTP 服务器、把固件放进它的根目录；路由器上电时进
+bootmenu（`bootdelay=2`，进入方式随机型，常见是上电时按住复位；不确定就接串口）选
+「Upgrade firmware」。
+
+另外两条更稳的路线：
+
+1. 先用小米官方恢复方式刷回**原厂固件**，再按本文档重新装一遍——stock layout 下这条路一定通。
+2. `mtkload` 可以用 TFTP 把 `-initramfs-kernel.bin` 直接加载到内存启动（**不写 flash**），
+   进系统后再 `sysupgrade`。这也是 initramfs 镜像唯一的用途。
 
 ## 注意
 
