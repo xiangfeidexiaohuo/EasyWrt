@@ -62,14 +62,14 @@ iwinfo rax0 assoclist                              # AP 侧交叉核对 RSSI
 只想验 wapp 这一段（绕开 RSSI 判定）：`/sbin/setbssid rax0 <对端BSSID>` 后
 `/sbin/steeringsta rax0 <客户端MAC>`，返回 0 即链路通。
 
-## 其他设备的默认无线
+## AX6000 默认无线
 
-| 设备 | 2.4G SSID | 5G SSID | 加密 |
-|---|---|---|---|
-| AX6000 | `ASUS` | `ASUS_5G` | WPA2/WPA3 混合（`sae-mixed`） |
+| 2.4G SSID | 5G SSID | 加密 |
+|---|---|---|
+| `ASUS` | `ASUS_5G` | WPA2/WPA3 混合（`sae-mixed`） |
 
-AX3000T 的 SSID 直接来自 `diy/files/ax3000t/etc/config/wireless`，不走 `WIFI_PASS`。
-其余设备的口令取自构建时的 `WIFI_PASS` 环境变量，默认值写在 `build.yml` 的 `env` 里。
+AX3000T 的 SSID 直接来自 `diy/files/ax3000t/etc/config/wireless`，不走 `WIFI_PASS`；
+AX6000 的口令取自构建时的 `WIFI_PASS` 环境变量，默认值写在 `build.yml` 的 `env` 里。
 
 **建议改用仓库 Secret**：Settings → Secrets and variables → Actions → New repository secret，
 名字 `WIFI_PASS`。不设置则使用公开的默认口令，等于固件出厂口令人人皆知。
@@ -206,6 +206,4 @@ AX6000 `0x1e00000` + `0x5000000`。`/getmtdlayout` 返回
 - `fix/80211v` 基于 lyimoexiao，他把 MT7981 的 `INDEX0_EEPROM_size` 从 `0x5000` 改成了 `0x200000`。
   已核对 AX3000T 的 `Factory` 分区正好是 `0x200000`（DTS `partition@180000`），不会越界，
   但首刷仍要确认 WiFi 能正常起来；异常就切 `fix/80211v-pdv`。
-- 仓库里其余 7 份 `configs/ARM/mt798x/*.config`（a31、ct3003、nx30pro、q30、rax3000m×2、t7、wr30u）
-  目前没有对应的构建条目，需要时按上面第 3 步接进去。
 - 本仓库为 [xiangfeidexiaohuo/EasyWrt](https://github.com/xiangfeidexiaohuo/EasyWrt) 的 fork。
