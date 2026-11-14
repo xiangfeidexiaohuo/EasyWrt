@@ -1,0 +1,26 @@
+name: cleanup
+
+# 清理历史运行记录，避免 Actions 页面和额度被旧 run 占满。
+# 原来有两份（1 天 / 3 天），合并成一份，并保留最近 3 次用于回溯。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 20 * * 0" # 每周一 04:00（Asia/Shanghai）
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  runs:
+    name: 清理旧运行记录
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 删除 7 天前的运行记录（保留最近 3 次）
+        uses: Mattraks/delete-workflow-runs@v2.1.0
+        with:
+          retain_days: 7
+          keep_minimum_runs: 3
+          token: ${{ secrets.GITHUB_TOKEN }}

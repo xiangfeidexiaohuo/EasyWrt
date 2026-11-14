@@ -1,0 +1,229 @@
+name: build
+
+# 一台设备一个 matrix 条目，避免为每台机器复制一份 workflow。
+# 触发方式：
+#   - 手动：Actions → build → Run workflow，可选只构建单台设备
+#   - API ：repository_dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 要构建的设备（all = 全部）
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - ax3000t
+          - ax6000
+  repository_dispatch:
+
+permissions:
+  contents: write
+
+# 同一分支只允许一个构建在跑，避免两个 run 抢着发 release
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REPO_URL: https://github.com/iscelor/immortalwrt-mt798x-6.6
+  REPO_BRANCH: fix/80211v
+  WIFI_PASS: ${{ secrets.WIFI_PASS || 'Dsa78963' }}
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 2G
+  TZ: Asia/Shanghai
+
+jobs:
+  # 把设备表集中在一处：加设备只改这里
+  setup:
+    name: 解析设备列表
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.gen.outputs.include }}
+    steps:
+      - id: gen
+        run: |
+          set -euo pipefail
+          all='[{"device":"ax3000t","label":"小米AX3000T","config":"configs/ARM/mt798x/mt7981_ax3000t.config","rom":"immortalwrt-mediatek-filogic-xiaomi_mi-router-ax3000t-squashfs-sysupgrade.bin"},{"device":"ax6000","label":"红米AX6000","config":"configs/ARM/mt798x/mt7986_ax6000.config","rom":"immortalwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-stock-squashfs-sysupgrade.bin"}]'
+          sel='${{ github.event.inputs.device }}'
+          if [ -z "$sel" ] || [ "$sel" = "all" ]; then
+            echo "include=$all" >> "$GITHUB_OUTPUT"
+          else
+            sel_json="$(echo "$all" | jq -c --arg d "$sel" '[.[] | select(.device == $d)]')"
+            [ "$sel_json" != "[]" ] || { echo "::error::未知设备 $sel"; exit 1; }
+            echo "include=$sel_json" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: ${{ matrix.label }}
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.include) }}
+    steps:
+      - name: 检出本仓库
+        uses: actions/checkout@v4
+
+      - name: 释放磁盘空间
+        run: |
+          sudo timedatectl set-timezone "Asia/Shanghai"
+          sudo -E swapoff -a
+          sudo -E rm -f /swapfile
+          sudo -E docker image prune -a -f
+          sudo -E snap set system refresh.retain=2
+          sudo -E apt-get -y purge dotnet* firefox ghc* google* llvm* mono* mysql* openjdk* php* zulu*
+          sudo -E apt-get -y autoremove --purge
+          sudo -E rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /etc/mysql /etc/php /usr/local/share/boost
+          [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+          sudo -E apt-get update -y
+          sudo -E apt-get install -y ack antlr3 aria2 asciidoc autoconf automake autopoint \
+            binutils bison build-essential bzip2 ccache cpio curl device-tree-compiler fastjar flex \
+            gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
+            libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
+            libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf g++ file clang genisoimage python3-pip libpython3-dev \
+            qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim \
+            wget xmlto xxd zlib1g-dev libfuse-dev python3-setuptools
+          sudo -E apt-get clean
+          df -h /
+
+      - name: 克隆源码并记录提交
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+          git -C openwrt rev-parse HEAD | tee source-commit.txt
+          echo "构建源码: $REPO_URL@$REPO_BRANCH $(cat source-commit.txt)"
+
+      - name: 自定义 feeds
+        working-directory: ./openwrt
+        run: |
+          set -euo pipefail
+          cp -f ../diy/mt798x/feed.sh ./feed.sh
+          chmod +x ./feed.sh
+          ./feed.sh
+
+      - name: 更新 feeds
+        working-directory: ./openwrt
+        run: |
+          set -euo pipefail
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 设备定制
+        env:
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -euo pipefail
+          chmod +x diy/mt798x/*.sh
+          ./diy/mt798x/"${DEVICE}".sh openwrt
+          echo "--- 定制结果抽查 ---"
+          grep -c 'sae-mixed' openwrt/package/mtk/applications/mtwifi-cfg/files/mtwifi.sh
+
+      - name: 缓存下载的源码包
+        uses: actions/cache@v4
+        with:
+          path: openwrt/dl
+          key: dl-${{ matrix.device }}-${{ hashFiles('configs/ARM/mt798x/*.config') }}
+          restore-keys: |
+            dl-${{ matrix.device }}-
+
+      - name: 缓存 ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.device }}-${{ hashFiles('configs/ARM/mt798x/*.config') }}
+          restore-keys: |
+            ccache-${{ matrix.device }}-
+
+      - name: 应用配置
+        env:
+          CONFIG_FILE: ${{ matrix.config }}
+        run: |
+          set -euo pipefail
+          cp -f "$CONFIG_FILE" openwrt/.config
+          # 打开 ccache 并指向被缓存的目录（seed 里原本是 not set / 空路径）
+          sed -i \
+            -e 's|^# CONFIG_CCACHE is not set$|CONFIG_CCACHE=y|' \
+            -e "s|^CONFIG_CCACHE_DIR=.*|CONFIG_CCACHE_DIR=\"${CCACHE_DIR}\"|" \
+            openwrt/.config
+          grep -q '^CONFIG_CCACHE=y$' openwrt/.config || echo 'CONFIG_CCACHE=y' >> openwrt/.config
+          grep -q '^CONFIG_CCACHE_DIR=' openwrt/.config || echo "CONFIG_CCACHE_DIR=\"${CCACHE_DIR}\"" >> openwrt/.config
+          cd openwrt
+          make defconfig
+          # 配置被上游改动吞掉时立刻失败，而不是编出一个残废固件
+          grep -q '^CONFIG_PACKAGE_kmod-mt_wifi=y$' .config || { echo "::error::厂商无线驱动没有被选中"; exit 1; }
+          grep -q '^CONFIG_PACKAGE_mtwifi-cfg=y$' .config || { echo "::error::mtwifi-cfg 没有被选中"; exit 1; }
+
+      - name: 下载源码包
+        working-directory: ./openwrt
+        run: |
+          set -euo pipefail
+          ok=0
+          for i in 1 2 3; do
+            if make download -j"$(nproc)"; then ok=1; break; fi
+            echo "::warning::下载失败，第 $i 次，10 秒后重试"
+            sleep 10
+          done
+          [ "$ok" = 1 ] || { echo "::error::下载三次均失败"; exit 1; }
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 编译
+        working-directory: ./openwrt
+        run: make -j"$(nproc)" V=s
+
+      - name: 打包与校验
+        id: pack
+        env:
+          ROM: ${{ matrix.rom }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          src="openwrt/bin/targets/mediatek/filogic/${ROM}"
+          if [ ! -f "$src" ]; then
+            echo "::error::找不到产物 $src"
+            ls -l openwrt/bin/targets/mediatek/filogic/ || true
+            exit 1
+          fi
+          cp "$src" out/
+          ( cd out && sha256sum "$ROM" > "$ROM.sha256" )
+          commit="$(cat source-commit.txt)"
+          {
+            echo "设备: ${{ matrix.label }} (${{ matrix.device }})"
+            echo "源码: $REPO_URL @ $REPO_BRANCH"
+            echo "提交: $commit"
+            echo "配置: ${{ matrix.config }}"
+            echo "构建: $(date -u +%FT%TZ) (UTC)"
+            echo "大小: $(stat -c%s "out/${ROM}") 字节"
+          } > out/build-info.txt
+          cat out/build-info.txt
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag=$(date +%Y%m%d%H%M%S)-${{ matrix.device }}" >> "$GITHUB_OUTPUT"
+          echo "name=EasyWrt-${{ matrix.label }}-$(date +%Y%m%d)-${commit:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.device }}-${{ steps.pack.outputs.tag }}
+          path: out/*
+          retention-days: 14
+
+      - name: 发布 Release
+        uses: ncipollo/release-action@v1.14.0
+        with:
+          artifacts: out/*
+          name: ${{ steps.pack.outputs.name }}
+          tag: ${{ steps.pack.outputs.tag }}
+          body: |
+            设备：${{ matrix.label }}（${{ matrix.device }}）
+            源码提交：${{ steps.pack.outputs.commit }}
+            配置：${{ matrix.config }}
+            校验：同目录 `.sha256`
+            完整信息见附件 `build-info.txt`
+          token: ${{ secrets.GITHUB_TOKEN }}
