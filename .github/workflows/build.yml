@@ -9,13 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: 要构建的设备（all = 全部）
+        description: 要构建的设备（默认只编 AX3000T，all = 全部）
         type: choice
         required: true
-        default: all
+        default: ax3000t
         options:
-          - all
           - ax3000t
+          - all
           - ax6000
   repository_dispatch:
 
