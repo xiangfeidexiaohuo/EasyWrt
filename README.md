@@ -163,43 +163,42 @@ diy/aliupload.py         # 未接线，预留给网盘上传
 3. 在 `build.yml` 的 `setup` 步骤里给 `all` JSON 加一条
    （`device` / `label` / `config` / `rom` 四个字段，`device` 必须与脚本同名）
 
-## 救砖：两台都是不死 U-Boot（已实测确认）
+## 救砖：两台都是不死 U-Boot，但已不是同一代
 
-两台机器的 FIP 分区与官方 `*-fip-multi.bin` **逐字节一致**，确认跑的是 bl-mt798x 系的
-不死 U-Boot（multi 变体），不是原厂 bootloader：
+### 现状（2026-11-14）
 
-| 设备 | 文件 | 大小 | sha256（一致） |
+| 设备 | bootloader | Web failsafe | DHCP |
 |---|---|---|---|
-| AX3000T | `mt7981-xiaomi_mi-router-ax3000t-fip-multi.bin` | 714025 | `e0a6e3bc6975…` |
-| AX6000 | `mt7986-xiaomi_redmi-router-ax6000-fip-multi.bin` | 808457 | `0796db443004…` |
+| AX3000T | `Yuzhii0718/bl-mt798x-dhcpd`，U-Boot 2025.07.1（2026-10-30 构建，`e4cf4dc`） | **192.168.10.1** | **正常**，插上就能拿到 192.168.10.x |
+| AX6000 | 旧版 bl-mt798x，U-Boot 2022.07（2023-11-30 构建） | 192.168.1.1 | 坏的（服务器标识/掩码全发 0.0.0.0），需静态 IP |
 
-以后换机器想确认，照这个比对：
+AX3000T 升级前的原厂 FIP 已备份（714,025 字节，sha256 `e0a6e3bc6975…`）；
+升级后的 FIP 为 971,672 字节，sha256 `4c26abf1a25b…`。
 
-```sh
-dd if=/dev/mtd4 of=/tmp/fip.bin bs=4096 count=200
-head -c <固件文件字节数> /tmp/fip.bin | sha256sum
-```
+### 进入方式
 
-### 恢复方式：reset 进 web failsafe
+断电，按住 reset 上电保持 5 秒，浏览器打开上表对应地址。
 
-断电，按住 reset 上电保持 5 秒，浏览器打开页面直接上传固件。地址通常由 DHCP 下发；
-**AX3000T 拿不到地址是这套 U-Boot 的已知问题**（帖子里提到与 Nvram 有关），
-手动给电脑设静态 IP 即可，不影响使用。
+- AX3000T 的新版还能用 `/env.html` 改环境变量、`/console.html` 开 Web 终端、
+  `/backup.html` 备份整片 flash、`/flash.html` 直接读写分区、`/initramfs.html` 内存启动。
+- AX6000 的旧版只有 `/`、`/uboot.html`、`/bl2.html`；DHCP 拿不到地址时，
+  给电脑设静态 `192.168.1.200/24` 即可。
+
+### 分区布局（升级后未变）
+
+两台都是 stock 尺寸：AX3000T `ubi_kernel 0x2200000` + `ubi 0x4e00000`，
+AX6000 `0x1e00000` + `0x5000000`。`/getmtdlayout` 返回
+`default;default;immortalwrt-112m;qwrt;`，当前布局是 `default`，所以本文档的 stock 镜像适用。
+如果以后切到 `immortalwrt-112m`，必须换 ubootmod 固件。
 
 ### 不要用 fw_printenv 判断或修改 bootloader
 
-`/etc/fw_env.config` 指向 `Nvram` 分区，但那里是**原厂的残留环境变量**
-（`bootcmd=bootxq`、`bootmenu_N=mtkupgrade…`、`ipaddr=192.168.10.1`）。新的 U-Boot 不读它，所以：
+`/etc/fw_env.config` 指向 `Nvram` 分区，里面是**原厂残留的环境变量**
+（`bootcmd=bootxq`、`bootmenu_N=mtkupgrade…`、`ipaddr=192.168.10.1`）。这些值不会驱动现在的 bootloader：
 
 - 用 `fw_printenv` 判断 bootloader 类型会得出错误结论（这几行已经骗过我一次）
-- 用 `fw_setenv` 改参数对 bootloader 无效，只是写进一块没人看的空间
-- 网上基于这些变量的 TFTP 恢复地址（`192.168.10.1` 之类）对这两台**不适用**
-
-### 分区布局
-
-`cat /proc/mtd` 实测两台都是 stock 尺寸：AX3000T `ubi_kernel 0x2200000` + `ubi 0x4e00000`，
-AX6000 `0x1e00000` + `0x5000000`。所以本文档的 stock 镜像适用；如果以后重刷成 expand 变体，
-必须换 ubootmod 固件。
+- 用 `fw_setenv` 改参数对 bootloader 无效，只是写进一块没人读的空间
+- AX6000 的 `192.168.1.1` 是 bootloader 自己的默认值，不是 Nvram 里那个
 
 ## 注意
 
