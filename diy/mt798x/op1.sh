@@ -7,4 +7,3 @@
 #sed -i '1i src-git passwall_luci https://github.com/xiaorouji/openwrt-passwall.git;main' feeds.conf.default
 #sed -i '1i src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main' feeds.conf.default
 
-sed -i '1i src-git Lucky https://github.com/sirpdboy/luci-app-lucky.git;main' feeds.conf.default
