@@ -19,9 +19,9 @@ on:
         required: true
         default: ax3000t
         options:
-          - ax3000t
           - all
           - ax6000
+          - ax3000t
 
       # 下面四项留空即用默认值；填了就不必改仓库文件
       ssid_2g:
