@@ -80,7 +80,10 @@ jobs:
           set -euo pipefail
           all='[{"device":"ax3000t","label":"小米AX3000T","config":"configs/ARM/mt798x/mt7981_ax3000t.config","rom":"immortalwrt-mediatek-filogic-xiaomi_mi-router-ax3000t-squashfs-sysupgrade.bin"},{"device":"ax6000","label":"红米AX6000","config":"configs/ARM/mt798x/mt7986_ax6000.config","rom":"immortalwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-stock-squashfs-sysupgrade.bin"}]'
           sel='${{ github.event.inputs.device }}'
-          if [ -z "$sel" ] || [ "$sel" = "all" ]; then
+          # 通过 API / repository_dispatch 触发时没有 inputs，默认只编 AX3000T，
+          # 想编全部必须显式传 device=all（与界面上的默认值保持一致）
+          [ -n "$sel" ] || sel='ax3000t'
+          if [ "$sel" = "all" ]; then
             echo "include=$all" >> "$GITHUB_OUTPUT"
           else
             sel_json="$(echo "$all" | jq -c --arg d "$sel" '[.[] | select(.device == $d)]')"
