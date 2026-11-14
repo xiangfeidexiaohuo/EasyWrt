@@ -125,6 +125,27 @@ jobs:
           echo "--- 定制结果抽查 ---"
           grep -c 'sae-mixed' openwrt/package/mtk/applications/mtwifi-cfg/files/mtwifi.sh
 
+      - name: 写入设备内置配置
+        env:
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -euo pipefail
+          src="diy/files/${DEVICE}"
+          if [ ! -d "$src" ]; then
+            echo "::notice::${DEVICE} 没有内置配置目录，沿用上游默认"
+            exit 0
+          fi
+          # openwrt/files 由 include/image.mk 在 prepare_rootfs 阶段覆盖到 rootfs，
+          # 晚于包安装，所以 /etc/config/* 以这里为准
+          mkdir -p openwrt/files
+          cp -a "$src/." openwrt/files/
+          echo "--- 写入 openwrt/files ---"
+          find openwrt/files -type f -printf '%P\n' | sort
+          if [ -f "openwrt/files/etc/config/wireless" ]; then
+            grep -q "encryption 'sae-mixed'" openwrt/files/etc/config/wireless \
+              || { echo "::error::内置 wireless 不是 sae-mixed，拒绝继续"; exit 1; }
+          fi
+
       - name: 缓存下载的源码包
         uses: actions/cache@v4
         with:

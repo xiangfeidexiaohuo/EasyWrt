@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# AX3000T：把首启生成的默认配置改造成「桥接 AP」
+#
+# 为什么不直接烤一份 /etc/config/network：
+#   /bin/config_generate 开头是
+#       [ -s /etc/config/network -a -s /etc/config/system ] && exit 0
+#   只要 network 已存在就整段跳过；而 WAN 的出厂 MAC 恰恰是它从 Bdata
+#   分区读 ethaddr_wan 写进 `config device 'wan'` 的
+#   （/etc/board.d/02_network：xiaomi 机型走 mtd_get_mac_ascii Bdata ethaddr_wan）。
+#   烤文件等于让每台机器丢掉自己的 WAN MAC，所以这里只改「策略」：
+#   AP 模式、管理地址、把 wan 并进 br-lan。设备身份仍由固件自己读。
+#
+# 时机：/etc/init.d/boot 先执行 /bin/config_generate，之后才 uci_apply_defaults，
+# 因此本脚本运行时 network 一定已经生成好了。
+
+[ -f /etc/config/network ] || exit 0
+
+. /lib/functions.sh
+
+br_sec=""
+br_dev=""
+find_br_lan() {
+	local name
+	config_get name "$1" name
+	case "$name" in
+		br-lan|br-lan.*) br_sec="$1"; br_dev="$name" ;;
+	esac
+}
+
+config_load network
+config_foreach find_br_lan device
+
+if [ -z "$br_sec" ]; then
+	# 上游没生成桥（正常情况下不会走到），补一个，避免整机没网
+	br_dev="br-lan"
+	br_sec="$(uci add network device)"
+	uci -q set "network.$br_sec.name=$br_dev"
+	uci -q set "network.$br_sec.type=bridge"
+	echo "ax3000t-ap-mode: created missing $br_dev" >&2
+fi
+
+# 把有线口全部并进桥：插哪个口都能进后台。已存在的不重复加。
+old="$(uci -q get "network.$br_sec.ports")"
+new="$old"
+for port in lan2 lan3 lan4 wan; do
+	case " $new " in
+		*" $port "*) ;;
+		*) new="${new:+$new }$port" ;;
+	esac
+done
+[ "$new" = "$old" ] || uci -q set "network.$br_sec.ports=$new"
+
+# wan 成为桥成员后，不能再有接口在它上面跑 DHCP 客户端；
+# 只删接口，`config device 'wan'`（带出厂 MAC）保留。
+uci -q delete network.wan
+uci -q delete network.wan6
+
+# AP 的管理地址。build 阶段 apply_lan_ip 会把 config_generate 的默认值也改成同一个，
+# 这里再写一次，避免那一步被上游改动影响时整机失联。
+uci -q set network.lan.device="$br_dev"
+uci -q set network.lan.proto='static'
+uci -q set network.lan.ipaddr='192.168.6.2'
+uci -q set network.lan.netmask='255.255.255.0'
+
+uci -q commit network
+
+exit 0
