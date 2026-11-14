@@ -66,6 +66,9 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 3G
   TZ: Asia/Shanghai
+  # 容器里以 root 运行，autoconf 的 tar/其他工具会拒绝：
+  # "you should not run configure as root"，需要这个开关放行
+  FORCE_UNSAFE_CONFIGURE: 1
 
 # 容器 job 里 run 的默认 shell 是 sh(dash)，不认 set -o pipefail；统一用 bash
 defaults:
