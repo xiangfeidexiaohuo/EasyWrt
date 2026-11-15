@@ -5,7 +5,8 @@ config turboacc 'config'
 	option fastpath_mh_eth_hnat_macvlan '0'
 	option fastpath_mh_eth_hnat_bind_rate '30'
 	option fastpath_mh_eth_hnat_ppenum '2'
-	option fullcone '2'
+	# AP 不做 NAT，桥接流量不经过 nat 表，全锥形没有映射可改：0=禁用，2=Boardcom_FULLCONE_NAT
+	option fullcone '0'
 	# AP 模式标记：填本机管理地址，turboacc 据此不当网关用
 	option fastpath_mh_eth_hnat_ap '@LAN_IP@'
 	option tcpcca 'cubic'
