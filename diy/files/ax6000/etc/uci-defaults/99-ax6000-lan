@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# AX6000（主路由）：LAN 的 DHCP / IPv6 策略
+#
+# 只做「增量」，不烤 /etc/config/network 或 /etc/config/dhcp：
+#   - network 必须由 /bin/config_generate 生成，WAN 的 MAC 是它从 Bdata 分区
+#     读 ethaddr_wan 写进 `config device 'wan'` 的；烤文件会让所有机器撞 MAC。
+#   - dhcp 的 DHCPv6 / RA / SLAAC 默认值由 /etc/uci-defaults/15_odhcpd 写入，
+#     本脚本排在它之后（15 < 99），只覆盖需要偏离默认的几项。
+#
+# 对应 LuCI「网络 - 接口 - LAN - DHCP 服务器」：
+#   DHCP 最大分配数量     150 -> 100
+#   本地 IPv6 DNS 服务器  勾选 -> 取消（dns_service=0）
+#   RA 标识               other-config -> 无
+
+[ -f /etc/config/dhcp ] || exit 0
+
+# start 保持 100，所以地址池是 192.168.6.100-199
+uci -q set dhcp.lan.limit='100'
+
+# 不再把自己通告成 IPv6 DNS 服务器。
+# 注意：本固件的 dhcpv6 默认就是 disabled，RA 里的 RDNSS 是 IPv6 客户端
+# 唯一的 DNS 来源；关掉后 IPv6 客户端拿不到 IPv6 DNS，只能回退到 IPv4 DNS。
+uci -q set dhcp.lan.dns_service='0'
+
+# RA 标识设为「无」。odhcpd 默认是 other-config（O 标志），在 DHCPv6 已禁用时
+# 只是个空指示；这里显式清掉，避免客户端白等一次 DHCPv6。
+uci -q delete dhcp.lan.ra_flags
+uci -q add_list dhcp.lan.ra_flags='none'
+
+uci -q commit dhcp
+
+# 写不进去至少要在首启日志里留下痕迹，而不是静默不生效
+[ "$(uci -q get dhcp.lan.limit)" = "100" ] || echo "ax6000-lan: limit 未写入" >&2
+[ "$(uci -q get dhcp.lan.dns_service)" = "0" ] || echo "ax6000-lan: dns_service 未写入" >&2
+
+exit 0
