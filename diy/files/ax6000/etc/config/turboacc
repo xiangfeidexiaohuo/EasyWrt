@@ -1,0 +1,3 @@
+config turboacc 'config'
+	# 主路由做 NAT，全锥形（NAT1）要开着：0=禁用，2=Boardcom_FULLCONE_NAT
+	option fullcone '2'
