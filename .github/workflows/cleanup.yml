@@ -1,7 +1,11 @@
 name: cleanup
 
-# 清理历史运行记录，避免 Actions 页面和额度被旧 run 占满。
-# 原来有两份（1 天 / 3 天），合并成一份，并保留最近 3 次用于回溯。
+# 清理历史运行记录和过期缓存。
+#
+# 缓存这条尤其重要：仓库的 Actions 缓存配额是 10GB，超了 GitHub 按 LRU 自动
+# 淘汰 —— 淘汰掉的正好是下一次构建要用的 ccache/dl，那次构建就退化成冷编译
+# （实测冷启动 80 分钟，热缓存 33 分钟）。每次构建都会写入一份新的 ccache
+# 条目（key 带 run_id），没有清理的话配额迟早被自己撑爆。
 
 on:
   workflow_dispatch:
@@ -15,7 +19,7 @@ permissions:
 jobs:
   runs:
     name: 清理旧运行记录
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: 删除 7 天前的运行记录（保留最近 3 次）
@@ -24,3 +28,29 @@ jobs:
           retain_days: 7
           keep_minimum_runs: 3
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  caches:
+    name: 清理过期缓存
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: 删除 14 天前的 cache 条目
+        run: |
+          set -euo pipefail
+          cutoff=$(( $(date -u +%s) - 14 * 86400 ))
+          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .key, (.created_at | fromdateiso8601)] | @tsv' \
+            > "$RUNNER_TEMP/caches.tsv"
+          total=$(wc -l < "$RUNNER_TEMP/caches.tsv")
+          echo "现有 cache 条目: ${total}"
+          deleted=0
+          while IFS=$'\t' read -r id key ts; do
+            [ -n "${id:-}" ] || continue
+            [ "${ts:-0}" -lt "$cutoff" ] || continue
+            echo "删除 cache ${id} (${key})"
+            gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/caches/${id}" >/dev/null || true
+            deleted=$((deleted + 1))
+          done < "$RUNNER_TEMP/caches.tsv"
+          echo "本次删除 ${deleted} 条"

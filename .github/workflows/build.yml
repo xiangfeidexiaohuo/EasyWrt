@@ -1,6 +1,7 @@
 name: build
 
 # 一台设备一个 matrix 条目，避免为每台机器复制一份 workflow。
+# 设备表在 .github/devices.json：加设备只改那个文件，不碰 workflow。
 #
 # runner 固定 ubuntu-24.04：GitHub 在 2026-10 把 ubuntu-latest 切到 26.04，
 # 而 Ubuntu 25.10 起 coreutils 默认换成 uutils（Rust 版），`install --version`
@@ -46,11 +47,11 @@ on:
         default: ''
   repository_dispatch:
 
+# 写权限只给最后发版的那个 job，其余一律只读
 permissions:
-  contents: write
-  packages: read
+  contents: read
 
-# 同一分支只允许一个构建在跑，避免两个 run 抢着发 release
+# 同一分支只允许一个构建在跑（排队，不取消正在跑的那个）
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: false
@@ -63,11 +64,22 @@ env:
   SSID_2G: ${{ github.event.inputs.ssid_2g || 'ASUS' }}
   SSID_5G: ${{ github.event.inputs.ssid_5g || 'ASUS_5G' }}
   LAN_IP: ${{ github.event.inputs.lan_ip || '192.168.6.2' }}
-  CCACHE_DIR: ${{ github.workspace }}/.ccache
-  CCACHE_MAXSIZE: 3G
+
+  # ccache 的目录故意不在这里写死。OpenWrt 的 rules.mk 在
+  # CONFIG_CCACHE_DIR 为空时用 $(TOPDIR)/.ccache，也就是容器里的
+  # /__w/<repo>/<repo>/openwrt/.ccache —— 正好等于下面 cache 步骤的
+  # path: openwrt/.ccache。之前写的是 ${{ github.workspace }}/.ccache，
+  # 那是宿主机的 /home/runner/work/... ，容器内不一定存在，ccache 会
+  # 自己另建一个目录，于是"编译时写的缓存"和"被保存的缓存"可能不是同一份。
+  # 仓库的 cache 配额一共 10GB，两台设备各留 2G ccache + 共用 1.2G 源码包，
+  # 还有一半余量；现在实测只用到 0.5G，2G 是够的而且不会把配额吃光
+  CCACHE_MAXSIZE: 2G
+  # 不少包把 __TIME__/__DATE__ 编进版本字符串，不放开这条它们永远 miss
+  CCACHE_SLOPPINESS: time_macros
+
   TZ: Asia/Shanghai
   # 容器里以 root 运行，autoconf 的 tar/其他工具会拒绝：
-  # "you should not run configure as root"，需要这个开关放行
+  # "you should not configure as root"，需要这个开关放行
   FORCE_UNSAFE_CONFIGURE: 1
 
 # 容器 job 里 run 的默认 shell 是 sh(dash)，不认 set -o pipefail；统一用 bash
@@ -76,35 +88,44 @@ defaults:
     shell: bash
 
 jobs:
-  # 把设备表集中在一处：加设备只改这里
+  # 设备表在 .github/devices.json，这里只做筛选
   setup:
     name: 解析设备列表
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    outputs:
-      include: ${{ steps.gen.outputs.include }}
     steps:
+      - name: 检出本仓库
+        uses: actions/checkout@v7
+
       - id: gen
         run: |
           set -euo pipefail
-          all='[{"device":"ax3000t","label":"小米AX3000T","config":"configs/ARM/mt798x/mt7981_ax3000t.config","rom":"immortalwrt-mediatek-filogic-xiaomi_mi-router-ax3000t-squashfs-sysupgrade.bin"},{"device":"ax6000","label":"红米AX6000","config":"configs/ARM/mt798x/mt7986_ax6000.config","rom":"immortalwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-stock-squashfs-sysupgrade.bin"}]'
           sel='${{ github.event.inputs.device }}'
           # 通过 API / repository_dispatch 触发时没有 inputs，默认只编 AX3000T，
           # 想编全部必须显式传 device=all（与界面上的默认值保持一致）
           [ -n "$sel" ] || sel='ax3000t'
           if [ "$sel" = "all" ]; then
-            echo "include=$all" >> "$GITHUB_OUTPUT"
+            jq -c '.' .github/devices.json > "$RUNNER_TEMP/include.json"
           else
-            sel_json="$(echo "$all" | jq -c --arg d "$sel" '[.[] | select(.device == $d)]')"
-            [ "$sel_json" != "[]" ] || { echo "::error::未知设备 $sel"; exit 1; }
-            echo "include=$sel_json" >> "$GITHUB_OUTPUT"
+            jq -c --arg d "$sel" '[.[] | select(.device == $d)]' \
+              .github/devices.json > "$RUNNER_TEMP/include.json"
+            [ "$(jq 'length' "$RUNNER_TEMP/include.json")" -gt 0 ] \
+              || { echo "::error::未知设备 $sel"; exit 1; }
           fi
+          include="$(cat "$RUNNER_TEMP/include.json")"
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "将构建：\(.label) (\(.device))"' "$RUNNER_TEMP/include.json"
+    outputs:
+      include: ${{ steps.gen.outputs.include }}
 
   build:
     name: ${{ matrix.label }}
     needs: setup
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    permissions:
+      contents: read
+      packages: read       # 从 ghcr 拉 builder 镜像需要
     # 依赖全部预装在这个镜像里（docker/builder.Dockerfile），
     # 省掉原来每次 8 分钟的 apt-get install
     container:
@@ -118,7 +139,7 @@ jobs:
         include: ${{ fromJSON(needs.setup.outputs.include) }}
     steps:
       - name: 检出本仓库
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 检查构建环境
         run: |
@@ -126,15 +147,17 @@ jobs:
           echo "内核: $(uname -r)   CPU: $(nproc) 核"
           df -h /
           ccache --version | head -1
-          install --version | head -1
           python3 --version
 
       - name: 克隆源码并记录提交
+        id: src
         run: |
           set -euo pipefail
           git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
-          git -C openwrt rev-parse HEAD | tee source-commit.txt
-          echo "构建源码: $REPO_URL@$REPO_BRANCH $(cat source-commit.txt)"
+          commit="$(git -C openwrt rev-parse HEAD)"
+          echo "$commit" | tee source-commit.txt
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "构建源码: $REPO_URL@$REPO_BRANCH $commit"
 
       - name: 自定义 feeds
         working-directory: ./openwrt
@@ -188,25 +211,27 @@ jobs:
           fi
 
       - name: 缓存下载的源码包
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: openwrt/dl
-          key: dl-${{ matrix.device }}-${{ hashFiles('configs/ARM/mt798x/*.config') }}
-          # 前缀只到 dl-，两台设备共用同一批源码包（下载内容与设备无关）
+          # dl 里放的是上游源码包，只跟源码提交有关，跟设备/本地 config 无关：
+          # 用提交号做 key，上游不动就不会反复产生新条目，两台设备共用同一份
+          key: dl-${{ steps.src.outputs.commit }}
           restore-keys: |
             dl-
 
       - name: 缓存 ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           # 关键：key 必须每次唯一。actions/cache 命中后不会再保存，
           # 用固定 key 的话缓存永远停在第一次构建的状态，新编出来的对象
           # 一个都进不去，等于只有第一个小时的成果被复用。
           # 唯一 key + 前缀恢复最近一次，才能越编越热。
+          # path 与 OpenWrt 默认的 $(TOPDIR)/.ccache 对齐（见文件头 env 注释）
           key: ccache-${{ matrix.device }}-${{ github.run_id }}
           restore-keys: |
             ccache-${{ matrix.device }}-
-          path: .ccache
+          path: openwrt/.ccache
 
       - name: 应用配置
         env:
@@ -214,13 +239,12 @@ jobs:
         run: |
           set -euo pipefail
           cp -f "$CONFIG_FILE" openwrt/.config
-          # 打开 ccache 并指向被缓存的目录（seed 里原本是 not set / 空路径）
-          sed -i \
-            -e 's|^# CONFIG_CCACHE is not set$|CONFIG_CCACHE=y|' \
-            -e "s|^CONFIG_CCACHE_DIR=.*|CONFIG_CCACHE_DIR=\"${CCACHE_DIR}\"|" \
-            openwrt/.config
+          # 打开 ccache；目录留空，交给 rules.mk 用 $(TOPDIR)/.ccache，
+          # 这样容器里编译写入的目录和 actions/cache 的 path 是同一个
+          sed -i -e 's|^# CONFIG_CCACHE is not set$|CONFIG_CCACHE=y|' \
+                 -e '/^CONFIG_CCACHE_DIR=/d' \
+                 openwrt/.config
           grep -q '^CONFIG_CCACHE=y$' openwrt/.config || echo 'CONFIG_CCACHE=y' >> openwrt/.config
-          grep -q '^CONFIG_CCACHE_DIR=' openwrt/.config || echo "CONFIG_CCACHE_DIR=\"${CCACHE_DIR}\"" >> openwrt/.config
           # OpenWrt 的 prereq 只认 GNU coreutils；uutils 版会让 make defconfig 直接退出 2，
           # 报错还埋在 40 行 Checking 里。这里先自己判一次，给出能直接看懂的信息。
           install --version | head -1
@@ -233,6 +257,12 @@ jobs:
           # 配置被上游改动吞掉时立刻失败，而不是编出一个残废固件
           grep -q '^CONFIG_PACKAGE_kmod-mt_wifi=y$' .config || { echo "::error::厂商无线驱动没有被选中"; exit 1; }
           grep -q '^CONFIG_PACKAGE_mtwifi-cfg=y$' .config || { echo "::error::mtwifi-cfg 没有被选中"; exit 1; }
+          # 确认 ccache 目录没被别人写死（留空 = $(TOPDIR)/.ccache = 被缓存的那个）
+          if grep -qE '^CONFIG_CCACHE_DIR="[^"]+"' .config; then
+            echo "::error::CONFIG_CCACHE_DIR 被设置成了 $(grep -E '^CONFIG_CCACHE_DIR=' .config)，缓存目录会漂移"
+            exit 1
+          fi
+          echo "ccache 目录: \$(TOPDIR)/.ccache（对应被缓存的 openwrt/.ccache）"
 
       - name: 下载源码包
         working-directory: ./openwrt
@@ -250,19 +280,54 @@ jobs:
 
       - name: 编译
         working-directory: ./openwrt
+        timeout-minutes: 240
         run: |
           set -euo pipefail
+          export CCACHE_DIR="$PWD/.ccache"
           echo "--- 编译前 ccache ---"
           ccache -s || true
           # 4 vCPU 的 runner 上 -j5 比 -j4 更能填满流水线；内存 16G 足够
-          make -j"$(( $(nproc) + 1 ))" V=s
+          # V=s 的完整输出落盘，成功时只在控制台留摘要，失败时只打尾部
+          set +e
+          make -j"$(( $(nproc) + 1 ))" V=s > build.log 2>&1
+          rc=$?
+          set -e
+          stats="$(ccache -s || true)"
           echo "--- 编译后 ccache ---"
-          ccache -s || true
+          echo "$stats"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::编译失败（make 退出码 ${rc}），日志最后 200 行："
+            tail -n 200 build.log
+            exit "$rc"
+          fi
+          tail -n 5 build.log
+          hits="$(echo "$stats" | grep -m1 -E '^ *Hits:' | tr -s ' ' || true)"
+          size="$(echo "$stats" | grep -m1 -E 'Cache size' | tr -s ' ' || true)"
+          {
+            echo "### ${{ matrix.label }}"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 上游提交 | \`$(cat ../source-commit.txt)\` |"
+            echo "| ccache 命中 | ${hits:-n/a} |"
+            echo "| 缓存占用 | ${size:-n/a} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 失败时上传编译日志
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-log-${{ matrix.device }}
+          path: openwrt/build.log
+          retention-days: 7
+          if-no-files-found: ignore
+          # 重跑同一 run 时同名产物直接覆盖，而不是报 "artifact already exists"
+          overwrite: true
 
       - name: 打包与校验
-        id: pack
         env:
           ROM: ${{ matrix.rom }}
+          DEVICE: ${{ matrix.device }}
         run: |
           set -euo pipefail
           mkdir -p out
@@ -275,36 +340,83 @@ jobs:
           cp "$src" out/
           ( cd out && sha256sum "$ROM" > "$ROM.sha256" )
           commit="$(cat source-commit.txt)"
+          # 文件名带上设备：多个 artifact 合并到同一目录时不互相覆盖
           {
-            echo "设备: ${{ matrix.label }} (${{ matrix.device }})"
+            echo "设备: ${{ matrix.label }} (${DEVICE})"
             echo "源码: $REPO_URL @ $REPO_BRANCH"
             echo "提交: $commit"
             echo "配置: ${{ matrix.config }}"
             echo "构建: $(date -u +%FT%TZ) (UTC)"
             echo "大小: $(stat -c%s "out/${ROM}") 字节"
-          } > out/build-info.txt
-          cat out/build-info.txt
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          echo "tag=$(date +%Y%m%d%H%M%S)-${{ matrix.device }}" >> "$GITHUB_OUTPUT"
-          echo "name=EasyWrt-${{ matrix.label }}-$(date +%Y%m%d)-${commit:0:7}" >> "$GITHUB_OUTPUT"
+          } > "out/build-info-${DEVICE}.txt"
+          cat "out/build-info-${DEVICE}.txt"
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.device }}-${{ steps.pack.outputs.tag }}
+          name: ${{ matrix.device }}
           path: out/*
-          retention-days: 14
+          # 正式产物在 Release 里永久保存，这里只留几天下载窗口
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
+
+  # 一次运行只发一个 Release，把本次所有设备放在一起
+  release:
+    name: 发布
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成校验值与发布说明
+        id: notes
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -l
+          # 每台设备的 .sha256 合成一份，方便一条命令全量校验
+          cat ./*.sha256 > sha256sums.txt
+          {
+            echo "本次构建的全部设备固件。"
+            echo ""
+            echo "## 校验（sha256sum -c sha256sums.txt）"
+            echo ""
+            echo '```'
+            cat sha256sums.txt
+            echo '```'
+            echo ""
+            echo "## 构建信息"
+            for f in build-info-*.txt; do
+              echo ""
+              echo "**${f}**"
+              echo ""
+              echo '```'
+              cat "$f"
+              echo '```'
+            done
+          } > release-notes.md
+          tag="b${GITHUB_RUN_NUMBER}-$(date -u +%m%d)"
+          name="EasyWrt $(date -u +%Y-%m-%d) #${GITHUB_RUN_NUMBER}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "发布 tag: $tag  名称: $name"
+          cat release-notes.md
 
       - name: 发布 Release
-        uses: ncipollo/release-action@v1.14.0
+        uses: ncipollo/release-action@v1.21.0
         with:
-          artifacts: out/*
-          name: ${{ steps.pack.outputs.name }}
-          tag: ${{ steps.pack.outputs.tag }}
-          body: |
-            设备：${{ matrix.label }}（${{ matrix.device }}）
-            源码提交：${{ steps.pack.outputs.commit }}
-            配置：${{ matrix.config }}
-            校验：同目录 `.sha256`
-            完整信息见附件 `build-info.txt`
+          artifacts: dist/*
+          bodyFile: dist/release-notes.md
+          tag: ${{ steps.notes.outputs.tag }}
+          name: ${{ steps.notes.outputs.name }}
+          commit: ${{ github.sha }}
+          makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+[
+  {
+    "device": "ax3000t",
+    "label": "小米AX3000T",
+    "config": "configs/ARM/mt798x/mt7981_ax3000t.config",
+    "rom": "immortalwrt-mediatek-filogic-xiaomi_mi-router-ax3000t-squashfs-sysupgrade.bin"
+  },
+  {
+    "device": "ax6000",
+    "label": "红米AX6000",
+    "config": "configs/ARM/mt798x/mt7986_ax6000.config",
+    "rom": "immortalwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-stock-squashfs-sysupgrade.bin"
+  }
+]
