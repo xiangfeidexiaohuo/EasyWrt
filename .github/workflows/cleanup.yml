@@ -36,21 +36,30 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: 删除 14 天前的 cache 条目
+      - name: 每个 key 家族只留最近 2 份（另删 14 天前的）
         run: |
           set -euo pipefail
           cutoff=$(( $(date -u +%s) - 14 * 86400 ))
           gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" \
             --jq '.actions_caches[] | [.id, .key, (.created_at | fromdateiso8601)] | @tsv' \
             > "$RUNNER_TEMP/caches.tsv"
-          total=$(wc -l < "$RUNNER_TEMP/caches.tsv")
-          echo "现有 cache 条目: ${total}"
+          echo "现有 cache: $(wc -l < "$RUNNER_TEMP/caches.tsv") 条"
+          # 家族 = key 去掉最后一段（每轮构建都会变的就是那一段）：
+          #   ccache-ax6000-43722419766 -> ccache-ax6000
+          #   dl-1fb9fe701fac...        -> dl
+          # 每个家族按创建时间倒序保留最新 2 份：够 restore-keys 前缀命中，
+          # 又不会让 10GB 配额被历史条目占满。另兜底删 14 天前的一律清掉。
+          awk -F'\t' '{ fam = $2; sub(/-[^-]*$/, "", fam); print $3 "\t" fam "\t" $1 "\t" $2 }' \
+            "$RUNNER_TEMP/caches.tsv" |
+          sort -rn |
+          awk -F'\t' -v cutoff="$cutoff" '
+            { n[$2]++; if (n[$2] > 2 || $1 < cutoff) print $3 "\t" $4 }
+          ' > "$RUNNER_TEMP/delete.tsv"
           deleted=0
-          while IFS=$'\t' read -r id key ts; do
+          while IFS=$'\t' read -r id key; do
             [ -n "${id:-}" ] || continue
-            [ "${ts:-0}" -lt "$cutoff" ] || continue
-            echo "删除 cache ${id} (${key})"
+            echo "删除 ${id}  ${key}"
             gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/caches/${id}" >/dev/null || true
             deleted=$((deleted + 1))
-          done < "$RUNNER_TEMP/caches.tsv"
+          done < "$RUNNER_TEMP/delete.tsv"
           echo "本次删除 ${deleted} 条"
