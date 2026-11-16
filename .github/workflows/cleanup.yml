@@ -40,8 +40,11 @@ jobs:
         run: |
           set -euo pipefail
           cutoff=$(( $(date -u +%s) - 14 * 86400 ))
+          # created_at 是带微秒的（2026-11-15T15:21:08.839774Z），jq 的
+          # fromdateiso8601 只认 %Y-%m-%dT%H:%M:%SZ，直接喂会报
+          # strptime(...) cannot be applied —— 所以先截到秒再补 Z。
           gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" \
-            --jq '.actions_caches[] | [.id, .key, (.created_at | fromdateiso8601)] | @tsv' \
+            --jq '.actions_caches[] | [.id, .key, (.created_at[0:19] + "Z" | fromdateiso8601)] | @tsv' \
             > "$RUNNER_TEMP/caches.tsv"
           echo "现有 cache: $(wc -l < "$RUNNER_TEMP/caches.tsv") 条"
           # 家族 = key 去掉最后一段（每轮构建都会变的就是那一段）：
