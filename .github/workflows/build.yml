@@ -41,7 +41,7 @@ on:
         required: false
         default: ''
       lan_ip:
-        description: 管理地址（留空 = 192.168.1.1）
+        description: 管理地址（留空 = 192.168.6.2）
         type: string
         required: false
         default: ''
@@ -69,6 +69,8 @@ env:
   # CONFIG_CCACHE_DIR 为空时用 $(TOPDIR)/.ccache，也就是容器里的
   # /__w/<repo>/<repo>/openwrt/.ccache —— 正好等于下面 cache 步骤的
   # path: openwrt/.ccache。
+  # 注意：actions/cache 的 cache version 里包含 path，改这个路径等于换掉整套
+  # 缓存（历史条目还在，但对不上前缀了，下一轮会变成冷编译）。要动先想清楚。
   # 仓库的 cache 配额一共 10GB，两台设备各留 2G ccache + 共用 1.2G 源码包，
   # 还有一半余量；现在实测只用到 0.5G，2G 是够的而且不会把配额吃光
   CCACHE_MAXSIZE: 2G
