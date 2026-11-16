@@ -41,7 +41,7 @@ on:
         required: false
         default: ''
       lan_ip:
-        description: 管理地址（留空 = 192.168.6.2）
+        description: 管理地址（留空 = 192.168.1.1）
         type: string
         required: false
         default: ''
@@ -68,9 +68,7 @@ env:
   # ccache 的目录故意不在这里写死。OpenWrt 的 rules.mk 在
   # CONFIG_CCACHE_DIR 为空时用 $(TOPDIR)/.ccache，也就是容器里的
   # /__w/<repo>/<repo>/openwrt/.ccache —— 正好等于下面 cache 步骤的
-  # path: openwrt/.ccache。之前写的是 ${{ github.workspace }}/.ccache，
-  # 那是宿主机的 /home/runner/work/... ，容器内不一定存在，ccache 会
-  # 自己另建一个目录，于是"编译时写的缓存"和"被保存的缓存"可能不是同一份。
+  # path: openwrt/.ccache。
   # 仓库的 cache 配额一共 10GB，两台设备各留 2G ccache + 共用 1.2G 源码包，
   # 还有一半余量；现在实测只用到 0.5G，2G 是够的而且不会把配额吃光
   CCACHE_MAXSIZE: 2G
@@ -284,6 +282,9 @@ jobs:
         run: |
           set -euo pipefail
           export CCACHE_DIR="$PWD/.ccache"
+          # 统计是累积在缓存目录里的（会跟 actions/cache 一起恢复），不清零的话
+          # 看到的命中数是好几轮加起来的，看不出这一轮到底命中了多少
+          ccache -z >/dev/null 2>&1 || true
           echo "--- 编译前 ccache ---"
           ccache -s || true
           # 4 vCPU 的 runner 上 -j5 比 -j4 更能填满流水线；内存 16G 足够
