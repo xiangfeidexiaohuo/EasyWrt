@@ -31,7 +31,9 @@ coreutils 默认换成 uutils，`install --version` 不再输出 GNU，OpenWrt �
 | 已刷好的机器上的设置 | SSH `uci set …; uci commit …; wifi reload` | 不要 |
 | 端口归属、加密方式、11v 默认值、加设备 | 改 `diy/files/…` 或 `diy/mt798x/*.sh` 并提交 | 要 |
 
-表单四项留空即取默认：`ASUS` / `ASUS_5G` / 仓库 Secret（再没有就 `Dsa78963`）/ `192.168.6.2`。
+表单留空时，SSID 为 `ASUS` / `ASUS_5G`，WiFi 口令取仓库 Secret（再没有就 `Dsa78963`）。
+管理地址按设备取值：AX3000T 为 `192.168.6.2`，AX6000 为 `192.168.6.1`，选 `all` 时也分别取默认值。
+两款设备均支持这四项表单参数；`all` 时填写的自定义值会用于两台，需要不同管理地址请分开构建。
 
 `wifi_pass` 填在表单里会出现在 Actions 的输入记录中（公开仓库可见）。想保密就配仓库 Secret，
 表单留空。

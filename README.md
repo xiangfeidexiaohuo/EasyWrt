@@ -26,7 +26,9 @@ AX3000T 出厂即桥接 AP（配置已烤进固件）：
 | 802.11k / r | 开启；802.11v 默认关闭，见 [`docs/80211v.md`](docs/80211v.md) |
 | WAN MAC | 从 Bdata 的 `ethaddr_wan` 读取，每台不同 |
 
-AX6000 保持上游默认（路由 + DHCP，`192.168.6.1`），只改 SSID、加密方式和口令。
+AX6000 保持主路由 + DHCP，默认管理地址 `192.168.6.1`；WiFi 为
+`ASUS` / `ASUS_5G`、`sae-mixed`，5G 固定信道 36 / HE80。
+两款设备的 SSID、WiFi 口令和管理地址均可通过构建表单覆盖。
 
 > 恢复出厂 = 回到 AP 模式：`192.168.6.2` 且不发 DHCP，电脑要先设静态地址才能进后台。
 
@@ -36,6 +38,7 @@ Actions → **build** → Run workflow：
 
 - `device`：`ax3000t`（默认）/ `ax6000` / `all`
 - 可填 `ssid_2g`、`ssid_5g`、`wifi_pass`、`lan_ip`，留空取默认
+- `lan_ip` 留空：AX3000T 为 `192.168.6.2`，AX6000 为 `192.168.6.1`（选 `all` 也分别取值）
 
 产出 `.bin` + `.sha256` + `build-info.txt`，Release 名为 `EasyWrt-<设备>-<日期>-<短 SHA>`。
 首次约 2~3 小时，命中 ccache 后 30~60 分钟。
@@ -60,6 +63,7 @@ Actions → **build** → Run workflow：
 .github/workflows/  build.yml（唯一构建入口）/ builder-image.yml / cleanup.yml
 configs/ARM/mt798x/ ax3000t、ax6000 的 seed 配置（完整 .config）
 diy/files/ax3000t/  直接进 rootfs 的 /etc/config（含 @占位符@）
+diy/files/ax6000/   主路由 WiFi 模板与 DHCP / NAT 默认设置
 diy/mt798x/         定制脚本：lib.sh / render.py / ax3000t.sh / ax6000.sh
 docker/             编译环境镜像
 docs/               802.11v 验证、刷机救砖、构建细节

@@ -41,7 +41,7 @@ on:
         required: false
         default: ''
       lan_ip:
-        description: 管理地址（留空 = 192.168.6.2）
+        description: 管理地址（留空：AX3000T = 192.168.6.2，AX6000 = 192.168.6.1）
         type: string
         required: false
         default: ''
@@ -63,7 +63,6 @@ env:
   WIFI_PASS: ${{ github.event.inputs.wifi_pass || secrets.WIFI_PASS || 'Dsa78963' }}
   SSID_2G: ${{ github.event.inputs.ssid_2g || 'ASUS' }}
   SSID_5G: ${{ github.event.inputs.ssid_5g || 'ASUS_5G' }}
-  LAN_IP: ${{ github.event.inputs.lan_ip || '192.168.6.2' }}
 
   # ccache 的目录故意不在这里写死。OpenWrt 的 rules.mk 在
   # CONFIG_CCACHE_DIR 为空时用 $(TOPDIR)/.ccache，也就是容器里的
@@ -137,6 +136,9 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.setup.outputs.include) }}
+    env:
+      # 按设备取默认值；all 构建时两台也保持各自的管理地址。
+      LAN_IP: ${{ github.event.inputs.lan_ip || (matrix.device == 'ax6000' && '192.168.6.1' || '192.168.6.2') }}
     steps:
       - name: 检出本仓库
         uses: actions/checkout@v7

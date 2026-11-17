@@ -8,7 +8,11 @@ set -euo pipefail
 SRC="${1:?用法: ax6000.sh <openwrt 源码目录>}"
 . "$(dirname "$0")/lib.sh"
 
-# 原 op2.sh 的行为：管理地址保持 192.168.6.1，SSID 改为 ASUS / ASUS_5G
+# 管理地址由表单指定，留空保持主路由的 192.168.6.1。
+apply_lan_ip "$SRC" "${LAN_IP:-192.168.6.1}"
+
+# WiFi 的表单值由 diy/files/ax6000/etc/config/wireless 渲染进 rootfs；
+# 这里保留生成器兜底，和 AX3000T 一样避免缺少内置配置时出现开放热点。
 apply_ssid "$SRC" "ASUS" "ASUS_5G"
 apply_wifi_key "$SRC"
 

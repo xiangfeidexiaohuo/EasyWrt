@@ -32,8 +32,9 @@ apply_lan_ip() {
 
 	sed -i "s/192\.168\.6\.1/$ip/g" "$f"
 
-	grep -q "$ip" "$f" || die "LAN IP 未写入"
-	if grep -q '192\.168\.6\.1' "$f"; then
+	grep -qF "$ip" "$f" || die "LAN IP 未写入"
+	# 默认值本身是合法选择；.10 / .100 也不能被误判为残留的 .1。
+	if [ "$ip" != '192.168.6.1' ] && grep -qE '192\.168\.6\.1([^0-9]|$)' "$f"; then
 		die "旧 LAN IP 仍然存在"
 	fi
 	info "LAN IP -> $ip"
