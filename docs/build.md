@@ -27,13 +27,14 @@ coreutils 默认换成 uutils，`install --version` 不再输出 GNU，OpenWrt �
 
 | 想改什么 | 怎么做 | 要重新编译吗 |
 |---|---|---|
-| SSID / 口令 / 管理地址 | Actions 表单填 `ssid_2g`、`ssid_5g`、`wifi_pass`、`lan_ip` | 要，但不用改文件 |
+| SSID / 口令 / 管理地址 | Actions 表单填 `ssid_2g`、`ssid_5g`、`wifi_pass`、`lan_ip`（或设备专属的 `lan_ip_ax3000t` / `lan_ip_ax6000`） | 要，但不用改文件 |
 | 已刷好的机器上的设置 | SSH `uci set …; uci commit …; wifi reload` | 不要 |
 | 端口归属、加密方式、11v 默认值、加设备 | 改 `diy/files/…` 或 `diy/mt798x/*.sh` 并提交 | 要 |
 
 表单留空时，SSID 为 `ASUS` / `ASUS_5G`，WiFi 口令取仓库 Secret（再没有就 `Dsa78963`）。
-管理地址按设备取值：AX3000T 为 `192.168.6.2`，AX6000 为 `192.168.6.1`，选 `all` 时也分别取默认值。
-两款设备均支持这四项表单参数；`all` 时填写的自定义值会用于两台，需要不同管理地址请分开构建。
+管理地址可分别填 `lan_ip_ax3000t` / `lan_ip_ax6000`，两者都优先于通用的 `lan_ip`（保留给旧表单，会同时作用于两台）。
+优先级：设备专属 > `lan_ip` > 设备默认（AX3000T `192.168.6.2`，AX6000 `192.168.6.1`）。
+选 `all` 时若只填通用 `lan_ip`，两台会拿到同一个地址；要分开就填两个设备专属字段。
 
 `wifi_pass` 填在表单里会出现在 Actions 的输入记录中（公开仓库可见）。想保密就配仓库 Secret，
 表单留空。

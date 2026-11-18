@@ -38,7 +38,8 @@ Actions → **build** → Run workflow：
 
 - `device`：`ax3000t`（默认）/ `ax6000` / `all`
 - 可填 `ssid_2g`、`ssid_5g`、`wifi_pass`、`lan_ip`，留空取默认
-- `lan_ip` 留空：AX3000T 为 `192.168.6.2`，AX6000 为 `192.168.6.1`（选 `all` 也分别取值）
+- 管理地址可分开填：`lan_ip_ax3000t` / `lan_ip_ax6000`，优先于通用的 `lan_ip`
+- 优先级：设备专属 > `lan_ip` > 设备默认（AX3000T `192.168.6.2`，AX6000 `192.168.6.1`）；选 `all` 也各取各的
 
 产出 `.bin` + `.sha256` + `build-info.txt`，Release 名为 `EasyWrt-<设备>-<日期>-<短 SHA>`。
 首次约 2~3 小时，命中 ccache 后 30~60 分钟。

@@ -41,7 +41,17 @@ on:
         required: false
         default: ''
       lan_ip:
-        description: 管理地址（留空：AX3000T = 192.168.6.2，AX6000 = 192.168.6.1）
+        description: 管理地址（通用，兼容旧表单；留空则用设备专属值或默认值）
+        type: string
+        required: false
+        default: ''
+      lan_ip_ax3000t:
+        description: AX3000T 管理地址（优先；留空 = 192.168.6.2）
+        type: string
+        required: false
+        default: ''
+      lan_ip_ax6000:
+        description: AX6000 管理地址（优先；留空 = 192.168.6.1）
         type: string
         required: false
         default: ''
@@ -137,8 +147,11 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.setup.outputs.include) }}
     env:
-      # 按设备取默认值；all 构建时两台也保持各自的管理地址。
-      LAN_IP: ${{ github.event.inputs.lan_ip || (matrix.device == 'ax6000' && '192.168.6.1' || '192.168.6.2') }}
+      # 按设备取值，all 构建时两台也不会撞地址。
+      # 优先级：设备专属输入 > 通用 lan_ip（旧表单） > 设备默认值。
+      # 最后兜底留空：新增设备却忘了配地址时，让 render.py 直接报错，
+      # 而不是静默沿用另一台设备的 192.168.6.2。
+      LAN_IP: ${{ (matrix.device == 'ax3000t' && (github.event.inputs.lan_ip_ax3000t || github.event.inputs.lan_ip || '192.168.6.2')) || (matrix.device == 'ax6000' && (github.event.inputs.lan_ip_ax6000 || github.event.inputs.lan_ip || '192.168.6.1')) || '' }}
     steps:
       - name: 检出本仓库
         uses: actions/checkout@v7
@@ -147,6 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "内核: $(uname -r)   CPU: $(nproc) 核"
+          echo "设备: ${{ matrix.device }}  管理地址: ${LAN_IP}"
           df -h /
           ccache --version | head -1
           python3 --version
